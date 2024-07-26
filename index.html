@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Corbos</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #f0f0f0;
+            margin: 0;
+            padding: 20px;
+        }
+        #game-board {
+            display: grid;
+            grid-template-columns: repeat(8, 50px);
+            grid-gap: 2px;
+            background-color: #333;
+            padding: 10px;
+            border-radius: 10px;
+        }
+        .gem {
+            width: 50px;
+            height: 50px;
+            border-radius: 25%;
+            cursor: pointer;
+            transition: transform 0.2s, background-color 0.3s, opacity 0.3s;
+        }
+        .gem:hover {
+            transform: scale(1.1);
+        }
+        #score, #high-score {
+            font-size: 24px;
+            margin: 10px 0;
+        }
+        @keyframes fallAnimation {
+            from { transform: translateY(-50px); }
+            to { transform: translateY(0); }
+        }
+    </style>
+</head>
+<body>
+    <h1>Corbos</h1>
+    <div id="score">Pontuação: 0</div>
+    <div id="high-score">Recorde: 0</div>
+    <div id="game-board"></div>
+
+    <script>
+      document.addEventListener('DOMContentLoaded', () => {
+    const colors = ['red', 'blue', 'green', 'yellow', 'purple', 'orange'];
+    const boardSize = 8;
+    let board = [];
+    let score = 0;
+    let highScore = 0;
+    let selectedGem = null;
+    let isAnimating = false;
+
+    function loadHighScore() {
+        try {
+            const savedHighScore = localStorage.getItem('corbosHighScore');
+            if (savedHighScore !== null) {
+                highScore = parseInt(savedHighScore);
+                updateHighScoreDisplay();
+            }
+        } catch (error) {
+            console.error('Error loading high score:', error);
+        }
+    }
+
+    function saveHighScore() {
+        try {
+            localStorage.setItem('corbosHighScore', highScore.toString());
+        } catch (error) {
+            console.error('Error saving high score:', error);
+        }
+    }
+
+    function createBoard() {
+        const gameBoard = document.getElementById('game-board');
+        gameBoard.innerHTML = '';
+        board = [];
+
+        for (let i = 0; i < boardSize; i++) {
+            board[i] = [];
+            for (let j = 0; j < boardSize; j++) {
+                const gem = document.createElement('div');
+                gem.classList.add('gem');
+                gem.dataset.row = i;
+                gem.dataset.col = j;
+                gem.style.backgroundColor = getRandomColor();
+                gem.addEventListener('click', gemClick);
+                gameBoard.appendChild(gem);
+                board[i][j] = gem;
+            }
+        }
+    }
+
+    function getRandomColor() {
+        return colors[Math.floor(Math.random() * colors.length)];
+    }
+
+    function gemClick(e) {
+        if (isAnimating) return;
+        const clickedGem = e.target;
+        const row = parseInt(clickedGem.dataset.row);
+        const col = parseInt(clickedGem.dataset.col);
+
+        if (!selectedGem) {
+            selectedGem = clickedGem;
+            selectedGem.style.opacity = '0.7';
+        } else {
+            if (isAdjacent(selectedGem, clickedGem)) {
+                swapGems(selectedGem, clickedGem);
+                if (!checkAndRemoveMatches()) {
+                    swapGems(selectedGem, clickedGem);
+                } else {
+                    isAnimating = true;
+                    setTimeout(async () => {
+                        do {
+                            await fillEmptySpaces();
+                        } while (checkAndRemoveMatches());
+                        updateScore();
+                        isAnimating = false;
+                    }, 300);
+                }
+            }
+            selectedGem.style.opacity = '1';
+            selectedGem = null;
+        }
+    }
+
+    function isAdjacent(gem1, gem2) {
+        const row1 = parseInt(gem1.dataset.row);
+        const col1 = parseInt(gem1.dataset.col);
+        const row2 = parseInt(gem2.dataset.row);
+        const col2 = parseInt(gem2.dataset.col);
+
+        return (Math.abs(row1 - row2) + Math.abs(col1 - col2)) === 1;
+    }
+
+    function swapGems(gem1, gem2) {
+        const tempColor = gem1.style.backgroundColor;
+        gem1.style.backgroundColor = gem2.style.backgroundColor;
+        gem2.style.backgroundColor = tempColor;
+    }
+
+    function checkAndRemoveMatches() {
+        let hasMatches = false;
+
+        for (let i = 0; i < boardSize; i++) {
+            for (let j = 0; j < boardSize; j++) {
+                const horizontalMatches = findMatches(i, j, 0, 1);
+                const verticalMatches = findMatches(i, j, 1, 0);
+
+                if (horizontalMatches.length >= 3) {
+                    removeMatches(horizontalMatches);
+                    hasMatches = true;
+                }
+                if (verticalMatches.length >= 3) {
+                    removeMatches(verticalMatches);
+                    hasMatches = true;
+                }
+            }
+        }
+
+        return hasMatches;
+    }
+
+    function findMatches(row, col, rowDir, colDir) {
+        const color = board[row][col].style.backgroundColor;
+        const matches = [[row, col]];
+
+        let newRow = row + rowDir;
+        let newCol = col + colDir;
+
+        while (newRow >= 0 && newRow < boardSize && newCol >= 0 && newCol < boardSize) {
+            if (board[newRow][newCol].style.backgroundColor === color) {
+                matches.push([newRow, newCol]);
+                newRow += rowDir;
+                newCol += colDir;
+            } else {
+                break;
+            }
+        }
+
+        return matches;
+    }
+
+    function removeMatches(matches) {
+        matches.forEach(([row, col]) => {
+            board[row][col].style.backgroundColor = 'transparent';
+        });
+        score += matches.length * 10;
+    }
+
+    function fillEmptySpaces() {
+        return new Promise(resolve => {
+            const animations = [];
+
+            for (let col = 0; col < boardSize; col++) {
+                let emptySpaces = 0;
+                for (let row = boardSize - 1; row >= 0; row--) {
+                    if (board[row][col].style.backgroundColor === 'transparent') {
+                        emptySpaces++;
+                    } else if (emptySpaces > 0) {
+                        const targetRow = row + emptySpaces;
+                        const color = board[row][col].style.backgroundColor;
+                        animations.push({ targetRow, col, color, delay: 50 * emptySpaces });
+                        board[row][col].style.backgroundColor = 'transparent';
+                    }
+                }
+                for (let row = 0; row < emptySpaces; row++) {
+                    const color = getRandomColor();
+                    animations.push({ targetRow: row, col, color, delay: 50 * (emptySpaces - row) });
+                }
+            }
+
+            animations.forEach(({ targetRow, col, color, delay }) => {
+                setTimeout(() => {
+                    board[targetRow][col].style.backgroundColor = color;
+                    board[targetRow][col].style.animation = 'fallAnimation 0.3s ease-in-out';
+                    setTimeout(() => {
+                        board[targetRow][col].style.animation = '';
+                    }, 300);
+                }, delay);
+            });
+
+            setTimeout(resolve, Math.max(...animations.map(a => a.delay)) + 300);
+        });
+    }
+
+    function updateScore() {
+        document.getElementById('score').textContent = `Pontuação: ${score}`;
+        if (score > highScore) {
+            highScore = score;
+            updateHighScoreDisplay();
+            saveHighScore();
+        }
+    }
+
+    function updateHighScoreDisplay() {
+        document.getElementById('high-score').textContent = `Recorde: ${highScore}`;
+    }
+
+    // Inicialização
+    try {
+        loadHighScore();
+        createBoard();
+    } catch (error) {
+        console.error('Error initializing game:', error);
+    }
+});
+
+window.onerror = function(message, source, lineno, colno, error) {
+    console.error('Global error:', message, 'at', source, 'line', lineno, 'column', colno);
+    return true;
+};
+    </script>
+</body>
+</html>
